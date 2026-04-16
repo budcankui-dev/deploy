@@ -27,6 +27,11 @@ uploads/
 # Build / packaging
 build/
 dist/
+dist-*/
+frontend/dist/
+frontend/dist-*/
+node_modules/
+frontend/node_modules/
 
 # Large media (keep samples local)
 *.mp4

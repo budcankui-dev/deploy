@@ -1,0 +1,21 @@
+# 缩小 docker build 上下文（根目录为 context）
+.git
+.gitignore
+.cursor
+**/__pycache__
+**/*.py[cod]
+**/*$py.class
+**/.pytest_cache
+**/.mypy_cache
+**/*.egg-info
+.venv
+venv
+**/node_modules
+
+minio_data
+logs
+*.md
+
+# 本地/辅助目录（镜像 COPY 未使用）
+deploy/nginx
+agent-transcripts

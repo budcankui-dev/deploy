@@ -1,0 +1,21 @@
+{
+  "name": "video-infer-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:receiver": "VITE_APP_ROLE=receiver vite build --outDir dist-receiver --emptyOutDir",
+    "build:sender": "VITE_APP_ROLE=sender vite build --outDir dist-sender --emptyOutDir",
+    "preview": "vite preview --host 0.0.0.0 --port 4173"
+  },
+  "dependencies": {
+    "vue": "^3.5.18",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.4",
+    "vite": "^5.4.19"
+  }
+}

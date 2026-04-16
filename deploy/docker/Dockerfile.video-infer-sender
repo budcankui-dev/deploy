@@ -1,0 +1,51 @@
+# syntax=docker/dockerfile:1
+FROM node:20-alpine AS web-build
+WORKDIR /web
+ARG NPM_REGISTRY="https://registry.npmmirror.com"
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm config set registry "${NPM_REGISTRY}" && npm install
+COPY frontend/ .
+ENV VITE_APP_ROLE=sender
+RUN npm run build
+
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.video_infer_docker.txt /app/requirements.txt
+ARG PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+ARG PIP_TRUSTED_HOST="mirrors.aliyun.com"
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip config set global.index-url "${PIP_INDEX_URL}" \
+  && python -m pip config set global.trusted-host "${PIP_TRUSTED_HOST}" \
+  && python -m pip install -r /app/requirements.txt
+ARG INSTALL_YOLO="false"
+ARG PIP_DEFAULT_TIMEOUT="1200"
+ARG PIP_RETRIES="20"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    if [ "${INSTALL_YOLO}" = "true" ]; then \
+      set -e; \
+      i=1; \
+      while [ "${i}" -le 5 ]; do \
+        echo "[pip] ultralytics install attempt ${i}/5"; \
+        if python -m pip install \
+          --default-timeout "${PIP_DEFAULT_TIMEOUT}" \
+          --retries "${PIP_RETRIES}" \
+          ultralytics==8.4.37; then \
+          break; \
+        fi; \
+        if [ "${i}" -eq 5 ]; then exit 1; fi; \
+        sleep $((i * 10)); \
+        i=$((i + 1)); \
+      done; \
+    fi
+COPY app /app/app
+COPY apps /app/apps
+COPY runtime /app/runtime
+COPY sql /app/sql
+COPY data/test.mp4 /app/data/test.mp4
+COPY data/auto_generated.mp4 /app/data/auto_generated.mp4
+COPY --from=web-build /web/dist /web
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python", "-m", "app.start", "--role", "sender"]
+

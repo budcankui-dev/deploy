@@ -1,0 +1,45 @@
+FROM node:20-alpine AS web-build
+WORKDIR /web
+ARG NPM_REGISTRY="https://registry.npmmirror.com"
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm config set registry "${NPM_REGISTRY}" && npm install
+COPY frontend/ .
+ENV VITE_APP_ROLE=trainer
+RUN npm run build
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+WORKDIR /app
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y python3 python3-pip python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements.txt /app/requirements.txt
+ARG PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+ARG PIP_TRUSTED_HOST="mirrors.aliyun.com"
+ARG PIP_DEFAULT_TIMEOUT="1200"
+ARG PIP_RETRIES="20"
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN python3 -m pip config set global.index-url "${PIP_INDEX_URL}" \
+  && python3 -m pip config set global.trusted-host "${PIP_TRUSTED_HOST}" \
+  && set -e; \
+     i=1; \
+     while [ "${i}" -le 5 ]; do \
+       echo "[pip] requirements install attempt ${i}/5"; \
+       if python3 -m pip install --no-cache-dir \
+         --default-timeout "${PIP_DEFAULT_TIMEOUT}" \
+         --retries "${PIP_RETRIES}" \
+         -r /app/requirements.txt; then \
+         break; \
+       fi; \
+       if [ "${i}" -eq 5 ]; then exit 1; fi; \
+       sleep $((i * 15)); \
+       i=$((i + 1)); \
+     done
+COPY app /app/app
+COPY apps /app/apps
+COPY runtime /app/runtime
+COPY sql /app/sql
+COPY --from=web-build /web/dist /web
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python3", "-m", "app.start", "--role", "trainer"]
+

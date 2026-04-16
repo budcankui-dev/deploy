@@ -7,5 +7,4 @@ requests==2.32.4
 SQLAlchemy==2.0.43
 PyMySQL==1.1.1
 redis==5.0.8
-ultralytics==8.4.37
-minio
+

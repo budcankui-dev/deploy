@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import argparse
 import json
 import os
 from dataclasses import dataclass
+from typing import Optional, Union
+from urllib.parse import quote_plus, urlparse, urlunparse
 
 
 @dataclass
@@ -49,7 +53,7 @@ def _base_parser(role: str) -> argparse.ArgumentParser:
     parser.add_argument("--db-port", type=int, default=int(os.getenv("DB_PORT", "3306")))
     parser.add_argument("--db-user", default=os.getenv("DB_USER", "root"))
     parser.add_argument("--db-password", default=os.getenv("DB_PASSWORD", ""))
-    parser.add_argument("--db-name", default=os.getenv("DB_NAME", "video_infer"))
+    parser.add_argument("--db-name", default=os.getenv("DB_NAME", "intent"))
     parser.add_argument("--redis-url", default=os.getenv("REDIS_URL", ""))
     parser.add_argument("--redis-stream-key", default=os.getenv("REDIS_STREAM_KEY", "task_runtime_events"))
     parser.add_argument("--task-meta", default=os.getenv("TASK_META", "{}"))
@@ -59,8 +63,15 @@ def _base_parser(role: str) -> argparse.ArgumentParser:
 
 def parse_sender_args() -> SenderConfig:
     parser = _base_parser("sender")
-    parser.add_argument("--video-path", default=os.getenv("VIDEO_PATH", "/app/test.mp4"))
-    parser.add_argument("--receiver-url", default=os.getenv("RECEIVER_URL", "http://127.0.0.1:8001"))
+    default_video = os.getenv("VIDEO_PATH", "").strip()
+    if not default_video:
+        # Prefer real video shipped/placed by user under ./data/test.mp4 when running locally.
+        if os.path.isfile("./data/test.mp4"):
+            default_video = "./data/test.mp4"
+        else:
+            default_video = "/app/data/test.mp4"
+    parser.add_argument("--video-path", default=default_video)
+    parser.add_argument("--receiver-url", default=os.getenv("RECEIVER_URL", "http://127.0.0.1:8002"))
     parser.add_argument("--fps", type=float, default=float(os.getenv("FPS", "10")))
     parser.add_argument("--width", type=int, default=int(os.getenv("WIDTH", "640")))
     parser.add_argument("--height", type=int, default=int(os.getenv("HEIGHT", "360")))
@@ -78,7 +89,7 @@ def parse_sender_args() -> SenderConfig:
         redis_stream_key=args.redis_stream_key,
         task_meta=_parse_task_meta(args.task_meta),
         video_path=args.video_path,
-        receiver_url=args.receiver_url.rstrip("/"),
+        receiver_url=_normalize_receiver_url(args.receiver_url),
         fps=max(args.fps, 0.1),
         width=max(args.width, 1),
         height=max(args.height, 1),
@@ -92,7 +103,7 @@ def parse_sender_args() -> SenderConfig:
 def parse_receiver_args() -> ReceiverConfig:
     parser = _base_parser("receiver")
     parser.add_argument("--host", default=os.getenv("HOST", "0.0.0.0"))
-    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8001")))
+    parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8002")))
     parser.add_argument("--infer-backend", default=os.getenv("INFER_BACKEND", "yolo"), choices=["yolo", "box"])
     parser.add_argument("--yolo-model", default=os.getenv("YOLO_MODEL", "yolov8"))
     parser.add_argument("--yolo-conf", type=float, default=float(os.getenv("YOLO_CONF", "0.25")))
@@ -119,13 +130,73 @@ def _build_db_url_from_args(args: argparse.Namespace) -> str:
     if args.db_url and args.db_url.strip():
         return args.db_url
     if args.db_type.lower() == "mysql":
-        user = args.db_user or "root"
-        pwd = args.db_password or ""
-        host = args.db_host or "127.0.0.1"
+        user = quote_plus(args.db_user or "root")
+        pwd = quote_plus(args.db_password or "")
+        host = _normalize_url_host(args.db_host or "127.0.0.1")
         port = args.db_port or 3306
         name = args.db_name or "video_infer"
         return f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{name}?charset=utf8mb4"
     return "sqlite:///./data/task_runtime.db"
+
+
+def _normalize_receiver_url(raw: str) -> str:
+    """
+    Normalize receiver URL for IPv4/IPv6.
+    Supports:
+    - http://127.0.0.1:8002
+    - http://[240e:xx::1]:8002
+    - 240e:xx::1 (auto-fill scheme/port)
+    - [240e:xx::1]:8002
+    """
+    value = (raw or "").strip()
+    if not value:
+        return "http://127.0.0.1:8002"
+
+    # If user passes pure host (v4/v6) without scheme, add scheme and default port.
+    if "://" not in value:
+        if value.startswith("[") and "]" in value:
+            if ":" in value.split("]", 1)[1]:
+                return f"http://{value}".rstrip("/")
+            return f"http://{value}:8002".rstrip("/")
+        if value.count(":") >= 2:
+            return f"http://[{value}]:8002".rstrip("/")
+        if ":" in value:
+            return f"http://{value}".rstrip("/")
+        return f"http://{value}:8002".rstrip("/")
+
+    parsed = urlparse(value)
+    scheme = parsed.scheme or "http"
+    path = parsed.path or ""
+    netloc = parsed.netloc
+    if not netloc and parsed.path:
+        # Handle malformed forms like "http://240e::1:8002" parsed strangely.
+        netloc = parsed.path
+        path = ""
+
+    if ":" in netloc and not netloc.startswith("["):
+        # likely IPv6 without brackets
+        if netloc.count(":") >= 2:
+            if netloc.rfind(":") > netloc.find(":"):
+                host_part, maybe_port = netloc.rsplit(":", 1)
+                if maybe_port.isdigit():
+                    netloc = f"[{host_part}]:{maybe_port}"
+                else:
+                    netloc = f"[{netloc}]"
+            else:
+                netloc = f"[{netloc}]"
+    normalized = urlunparse((scheme, netloc, path, "", "", ""))
+    return normalized.rstrip("/")
+
+
+def _normalize_url_host(host: str) -> str:
+    """
+    Normalize host segment used in URL authority for DB URL.
+    IPv6 host in URL must be bracketed.
+    """
+    value = (host or "").strip()
+    if ":" in value and not value.startswith("["):
+        return f"[{value}]"
+    return value
 
 
 def _parse_task_meta(raw: str | None) -> dict:
