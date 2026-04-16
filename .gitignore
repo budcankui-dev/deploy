@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Runtime artifacts
+logs/
+data/
+uploads/
+*.db
+*.sqlite
+*.sqlite3
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Build / packaging
+build/
+dist/
+
+# Large media (keep samples local)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.pt

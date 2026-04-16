@@ -1,0 +1,80 @@
+services:
+  receiver:
+    build: .
+    container_name: receiver_node
+    command:
+      - --role
+      - receiver
+      - --task-id
+      - ${TASK_ID:-task-demo}
+      - --db-url
+      - ${DB_URL:-}
+      - --db-type
+      - ${DB_TYPE:-sqlite}
+      - --db-host
+      - ${DB_HOST:-10.112.204.7}
+      - --db-port
+      - ${DB_PORT:-3306}
+      - --db-user
+      - ${DB_USER:-root}
+      - --db-password
+      - ${DB_PASSWORD:-}
+      - --db-name
+      - ${DB_NAME:-video_infer}
+      - --redis-url
+      - ${REDIS_URL:-}
+      - --redis-stream-key
+      - ${REDIS_STREAM_KEY:-task_runtime_events}
+      - --task-meta
+      - ${TASK_META:-{}}
+      - --host
+      - 0.0.0.0
+      - --port
+      - ${RECEIVER_PORT:-8001}
+    ports:
+      - "${RECEIVER_PORT:-8001}:${RECEIVER_PORT:-8001}"
+    volumes:
+      - ./data:/app/data
+
+  sender:
+    build: .
+    container_name: sender_node
+    depends_on:
+      - receiver
+    command:
+      - --role
+      - sender
+      - --task-id
+      - ${TASK_ID:-task-demo}
+      - --db-url
+      - ${DB_URL:-}
+      - --db-type
+      - ${DB_TYPE:-sqlite}
+      - --db-host
+      - ${DB_HOST:-10.112.204.7}
+      - --db-port
+      - ${DB_PORT:-3306}
+      - --db-user
+      - ${DB_USER:-root}
+      - --db-password
+      - ${DB_PASSWORD:-}
+      - --db-name
+      - ${DB_NAME:-video_infer}
+      - --redis-url
+      - ${REDIS_URL:-}
+      - --redis-stream-key
+      - ${REDIS_STREAM_KEY:-task_runtime_events}
+      - --task-meta
+      - ${TASK_META:-{}}
+      - --video-path
+      - /app/test.mp4
+      - --receiver-url
+      - ${RECEIVER_URL:-http://receiver:8001}
+      - --fps
+      - ${FPS:-10}
+      - --width
+      - ${WIDTH:-640}
+      - --height
+      - ${HEIGHT:-360}
+    volumes:
+      - ./data:/app/data
