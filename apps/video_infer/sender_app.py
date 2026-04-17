@@ -9,7 +9,6 @@ from typing import Any
 
 import cv2
 import requests
-import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,6 +16,7 @@ from fastapi.responses import JSONResponse
 from app.common.config import SenderConfig, parse_sender_args
 from apps.video_infer.core.frame_io import encode_frame_jpeg
 from apps.video_infer.core.metrics import avg, p95
+from runtime.net import run_uvicorn
 from runtime.report_client import ReportClient
 from runtime.task_contract import RuntimeTaskContract, build_sender_contract
 from runtime.web_static import serve_spa
@@ -394,7 +394,7 @@ def main():
     if cfg.ui_port <= 0:
         send_frames(sender_state.contract, sender_state)
         return
-    uvicorn.run(sender_app, host=cfg.ui_host, port=cfg.ui_port)
+    run_uvicorn(sender_app, cfg.ui_host, cfg.ui_port)
 
 
 if __name__ == "__main__":

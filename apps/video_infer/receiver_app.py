@@ -10,7 +10,6 @@ from typing import Any
 
 import cv2
 import numpy as np
-import uvicorn
 from fastapi import FastAPI, File, Form, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -18,6 +17,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from app.common.config import ReceiverConfig, parse_receiver_args
 from app.common.infer import BaseDetector, BoxDetector, RandomBoxDetector, build_detector
 from apps.video_infer.core.metrics import avg, p95
+from runtime.net import run_uvicorn
 from runtime.report_client import ReportClient
 from runtime.task_contract import RuntimeTaskContract, build_receiver_contract
 from runtime.web_static import serve_spa
@@ -161,10 +161,12 @@ def startup_event() -> None:
             redis_stream_key=receiver_contract.reporting.redis_stream_key,
         )
     detector_backend = str(receiver_contract.app_config.get("infer_backend", "yolo"))
+    yolo_model_raw = str(receiver_contract.app_config.get("yolo_model", "yolov8")).strip()
+    yolo_weight = MODEL_ALIAS_TO_WEIGHT.get(yolo_model_raw, yolo_model_raw)
     try:
         detector = build_detector(
             detector_backend,
-            receiver_contract.app_config.get("yolo_model", "yolov8"),
+            yolo_weight,
             float(receiver_contract.app_config.get("yolo_conf", 0.25)),
         )
         detector_backend = detector.backend_name
@@ -396,7 +398,7 @@ def main():
     global receiver_config, receiver_contract
     receiver_config = parse_receiver_args()
     receiver_contract = build_receiver_contract(receiver_config)
-    uvicorn.run(app, host=receiver_config.host, port=receiver_config.port)
+    run_uvicorn(app, receiver_config.host, receiver_config.port)
 
 
 if __name__ == "__main__":
